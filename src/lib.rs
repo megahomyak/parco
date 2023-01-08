@@ -38,8 +38,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_character_parser() {
+        let parser = character(|c| "abc".contains(c));
+        assert_eq!(parser("abcdef"), Ok(('a', "bcdef")));
+        assert_eq!(parser("bc"), Ok(('b', "c")));
+        assert_eq!(parser("c"), Ok(('c', "")));
+        assert_eq!(parser("dffffff"), Err(()));
+        assert_eq!(parser(""), Err(()));
+    }
+
+    #[test]
+    fn test_string_parser() {
+        let parser = string("abc");
+        assert_eq!(parser("abcdef"), Ok(("abc", "def")));
+        assert_eq!(parser("def"), Err(()));
+        assert_eq!(parser("abdef"), Err(()));
     }
 }
