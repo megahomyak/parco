@@ -1,66 +1,10 @@
-pub struct Or<P1, P2> {
-    p1: P1,
-    p2: P2,
-}
-
-pub struct OrError<P1E, P2E> {
-    first_parser_error: P1E,
-    second_parser_error: P2E,
-}
-
-impl<Input, Output, P1: Parser<Input, Output = Output>, P2: Parser<Input, Output = Output>>
-    Parser<Input> for Or<P1, P2>
-{
-    type Error = OrError<P1::Error, P2::Error>;
-    type Output = Output;
-
-    fn parse(&self, input: Input) -> ParsingResult<Input, Self::Output, Self::Error> {
-        match self.p1.parse(input) {
-            ParsingResult::Ok { value, rest } => ParsingResult::Ok { value, rest },
-            ParsingResult::Err(err1) => match self.p2.parse(input) {
-                ParsingResult::Ok { value, rest } => ParsingResult::Ok { value, rest },
-                ParsingResult::Err(err2) => ParsingResult::Err(OrError {
-                    first_parser_error: err1,
-                    second_parser_error: err2,
-                }),
-            },
-        }
-    }
-}
-
-pub trait ParserMethods {
-    fn or<P2>(self, other: P2) -> Or<Self, P2>
-    where
-        Self: Sized;
-}
-
-impl<T> ParserMethods for T {
-    fn or<P2>(self, other: P2) -> Or<Self, P2>
-    where
-        Self: Sized,
-    {
-        Or {
-            p1: self,
-            p2: other,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
-pub enum ParsingResult<Input, Output, Error> {
-    Ok { value: Output, rest: Input },
-    Err(Error),
-}
-
-pub enum CuttingResult<Part, Input> {
-    Ok { part: Part, rest: Input },
-    InputEnded,
-}
+pub struct Rest<T>(pub T);
 
 pub trait Input {
     type Part;
 
-    fn cut(self) -> CuttingResult<Self::Part, Self>
+    fn take_one_part(&self) -> Option<(Self::Part, Rest<Self>)>
     where
         Self: Sized;
 }
@@ -68,86 +12,120 @@ pub trait Input {
 impl Input for &str {
     type Part = char;
 
-    fn cut(self) -> CuttingResult<Self::Part, Self>
-    where
-        Self: Sized,
-    {
+    fn take_one_part(&self) -> Option<(Self::Part, Rest<Self>)> {
         let mut chars = self.chars();
-        match chars.next() {
-            Some(c) => CuttingResult::Ok {
-                part: c,
-                rest: chars.as_str(),
-            },
-            None => CuttingResult::InputEnded,
+        chars.next().map(|c| (c, Rest(chars.as_str())))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Position {
+    pub row: usize,
+    /// Column
+    pub col: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PositionedString<'s> {
+    src: &'s str,
+    pos: Position,
+}
+
+impl<'s> PositionedString<'s> {
+    pub fn src(&self) -> &str {
+        self.src
+    }
+
+    pub fn pos(&self) -> Position {
+        self.pos
+    }
+}
+
+impl<'s> From<&'s str> for PositionedString<'s> {
+    fn from(src: &'s str) -> Self {
+        Self {
+            src,
+            pos: Position { row: 1, col: 1 },
         }
     }
 }
 
-pub trait Parser<Input> {
-    type Output;
-    type Error;
+impl<'s> Input for PositionedString<'s> {
+    type Part = char;
 
-    fn parse(&self, input: Input) -> ParsingResult<Input, Self::Output, Self::Error>;
-}
-
-impl<Input, Output, Error, T: Fn(Input) -> ParsingResult<Input, Output, Error>> Parser<Input>
-    for T
-{
-    type Output = Output;
-    type Error = Error;
-
-    fn parse(&self, input: Input) -> ParsingResult<Input, Self::Output, Self::Error> {
-        self(input)
+    fn take_one_part(&self) -> Option<(Self::Part, Rest<Self>)> {
+        let mut chars = self.src.chars();
+        chars.next().map(|c| {
+            (
+                c,
+                Rest(Self {
+                    src: chars.as_str(),
+                    pos: if c == '\n' {
+                        Position {
+                            row: self.pos.row + 1,
+                            col: 1,
+                        }
+                    } else {
+                        Position {
+                            row: self.pos.row,
+                            col: self.pos.col + 1,
+                        }
+                    },
+                }),
+            )
+        })
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum MatchingPartGettingResult {
-    InputEnded,
-    InputDoesNotMatch,
+pub enum Result<T, I, F> {
+    /// Parsing completed successfully
+    Ok((T, Rest<I>)),
+    /// Recoverable error meaning "input cannot be parsed with the current parser"
+    Err,
+    /// Unrecoverable error meaning "input cannot be parsed with any parser"
+    Fatal(F),
 }
 
-pub trait Matcher<Value> {
-    fn check(&self, value: &Value) -> bool;
-}
+use crate::Result::{Err, Fatal, Ok};
 
-struct EqualityMatcher<Sample> {
-    pub sample: Sample,
-}
-
-struct FunctionMatcher<F> {
-    pub f: F,
-}
-
-impl<Value, F: Fn(&Value) -> bool> Matcher<Value> for FunctionMatcher<F> {
-    fn check(&self, value: &Value) -> bool {
-        (self.f)(value)
-    }
-}
-
-impl<'a, Value: 'a, Sample: PartialEq<&'a Value>> Matcher<Value> for EqualityMatcher<Sample> {
-    fn check(&self, value: &Value) -> bool {
-        self.sample == value
-    }
-}
-
-pub fn matching_part<I: Input, M: Matcher<I::Part>>(
-    matcher: M,
-) -> impl Parser<I, Output = I::Part, Error = MatchingPartGettingResult> {
-    move |s: I| loop {
-        match s.cut() {
-            CuttingResult::Ok { part, rest } => {
-                if matcher.check(&part) {
-                    break ParsingResult::Ok { value: part, rest };
-                } else {
-                    break ParsingResult::Err(MatchingPartGettingResult::InputDoesNotMatch);
-                }
-            }
-            CuttingResult::InputEnded => {
-                break ParsingResult::Err(MatchingPartGettingResult::InputEnded)
-            }
+impl<T, I, F> Result<T, I, F> {
+    pub fn and<O>(self, f: impl FnOnce((T, Rest<I>)) -> Result<O, I, F>) -> Result<O, I, F> {
+        match self {
+            Self::Ok(success) => f(success),
+            Self::Err => Err,
+            Self::Fatal(e) => Fatal(e),
         }
     }
+
+    pub fn or(self, f: impl FnOnce() -> Self) -> Self {
+        if let Self::Err = self {
+            f()
+        } else {
+            self
+        }
+    }
+
+    pub fn map<O>(self, f: impl FnOnce(T) -> O) -> Result<O, I, F> {
+        match self {
+            Self::Ok((value, rest)) => Ok((f(value), rest)),
+            Self::Err => Err,
+            Self::Fatal(e) => Fatal(e),
+        }
+    }
+}
+
+pub fn one_part<I: Input, F>(input: I) -> Result<I::Part, I, F> {
+    input
+        .take_one_part()
+        .map_or(Err, |(part, rest)| Ok((part, rest)))
+}
+
+pub fn one_matching_part<I: Input, F>(
+    input: I,
+    f: impl FnOnce(&I::Part) -> bool,
+) -> Result<I::Part, I, F> {
+    one_part(input).and(|(part, rest)| if f(&part) { Ok((part, rest)) } else { Err })
 }
 
 #[cfg(test)]
@@ -155,46 +133,123 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_character_parser() {
-        let parser = matching_part(FunctionMatcher {
-            f: |c: &char| "abc".contains(*c),
-        });
+    fn test_taking_one_part() {
+        assert_eq!(one_part::<_, ()>("abc"), Ok(('a', Rest("bc"))));
+
+        assert_eq!(one_part::<_, ()>(""), Err);
+    }
+
+    #[test]
+    fn test_taking_one_matching_part() {
         assert_eq!(
-            parser.parse("abcdef"),
-            ParsingResult::Ok {
-                value: 'a',
-                rest: "bcdef",
-            }
+            one_matching_part::<_, ()>("123", |c| c.is_numeric()),
+            Ok(('1', Rest("23")))
         );
+
+        assert_eq!(one_matching_part::<_, ()>("_?!", |c| c.is_numeric()), Err);
+
+        assert_eq!(one_matching_part::<_, ()>("", |_c| true), Err);
+    }
+
+    #[test]
+    fn test_sequential_parsing() {
+        let input = "12345";
+
         assert_eq!(
-            parser.parse("bc"),
-            ParsingResult::Ok {
-                value: 'b',
-                rest: "c",
-            }
+            one_matching_part::<_, ()>(input, |c| *c == '1').and(|(c1, input)| one_matching_part(
+                input.0,
+                |c| *c == '2'
+            )
+            .map(|c2| [c1, c2].iter().collect::<String>())),
+            Ok((String::from("12"), Rest("345")))
         );
+
         assert_eq!(
-            parser.parse("c"),
-            ParsingResult::Ok {
-                value: 'c',
-                rest: "",
-            }
+            one_matching_part::<_, ()>(input, |c| *c == 'a')
+                .and(|(_c, input)| one_matching_part(input.0, |c| *c == '1')),
+            Err,
         );
+
         assert_eq!(
-            parser.parse("dfffffff"),
-            ParsingResult::Err(MatchingPartGettingResult::InputDoesNotMatch)
+            one_matching_part::<_, ()>(input, |c| *c == '1')
+                .and(|(_c, input)| one_matching_part(input.0, |c| *c == 'b')),
+            Err,
         );
+
         assert_eq!(
-            parser.parse(""),
-            ParsingResult::Err(MatchingPartGettingResult::InputEnded)
+            one_matching_part::<_, ()>(input, |c| *c == 'a')
+                .and(|(_c, input)| one_matching_part(input.0, |c| *c == 'b')),
+            Err,
         );
     }
 
     #[test]
-    fn test_string_parser() {
-        let parser = string("abc");
-        assert_eq!(parser("abcdef"), Ok(("abc", "def")));
-        assert_eq!(parser("def"), Err(()));
-        assert_eq!(parser("abdef"), Err(()));
+    fn test_alternative_parsing() {
+        let input = "12345";
+
+        assert_eq!(
+            one_matching_part::<_, ()>(input, |c| *c == 'a')
+                .or(|| one_matching_part(input, |c| *c == '1')),
+            Ok(('1', Rest("2345")))
+        );
+
+        assert_eq!(
+            one_matching_part::<_, ()>(input, |c| *c == 'a')
+                .or(|| one_matching_part(input, |c| *c == 'b')),
+            Err,
+        );
+
+        assert_eq!(
+            one_matching_part::<_, ()>(input, |c| *c == '1')
+                .or(|| one_matching_part(input, |c| *c == 'b')),
+            Ok(('1', Rest("2345")))
+        );
+
+        assert_eq!(
+            one_matching_part::<_, ()>(input, |c| *c == '1')
+                .map(|_c| 'a')
+                .or(|| one_matching_part(input, |c| *c == '1')),
+            Ok(('a', Rest("2345")))
+        );
+    }
+
+    #[test]
+    fn test_output_mapping() {
+        assert_eq!(
+            one_part::<_, ()>("1").map(|_c| String::from("Hello!")),
+            Ok((String::from("Hello!"), Rest("")))
+        );
+
+        assert_eq!(one_part::<_, ()>("").map(|_c| String::from("Hello!")), Err);
+    }
+
+    #[test]
+    fn test_position_tracking() {
+        assert_eq!(
+            PositionedString::from("").pos(),
+            Position { row: 1, col: 1 }
+        );
+
+        assert_eq!(
+            one_part::<_, ()>(PositionedString::from("1")),
+            Ok((
+                '1',
+                Rest(PositionedString {
+                    pos: Position { row: 1, col: 2 },
+                    src: ""
+                })
+            ))
+        );
+
+        assert_eq!(
+            one_part::<_, ()>(PositionedString::from("a\n")).and(|(_c, rest)| one_part(rest.0)),
+            Ok((
+                '\n',
+                Rest(PositionedString {
+                    pos: Position { row: 2, col: 1 },
+                    src: ""
+                })
+            ))
+        );
     }
 }
