@@ -32,7 +32,7 @@ pub struct PositionedString<'s> {
 }
 
 impl<'s> PositionedString<'s> {
-    pub fn src(&self) -> &str {
+    pub fn src(&self) -> &'s str {
         self.src
     }
 
