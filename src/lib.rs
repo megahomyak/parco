@@ -128,6 +128,71 @@ pub fn one_matching_part<I: Input, F>(
     one_part(input).and(|(part, rest)| if f(&part) { Ok((part, rest)) } else { Err })
 }
 
+pub enum IterResult<T, F> {
+    Ok(T),
+    End,
+    Fatal(F),
+}
+
+pub struct Repeater<T, I, F, P: Fn(&I) -> Result<T, I, F>> {
+    rest: I,
+    parser: P,
+}
+
+impl<T, I, F, P: Fn(&I) -> Result<T, I, F>> Repeater<T, I, F, P> {
+    pub fn new(rest: I, parser: P) -> Self {
+        Self { rest, parser }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum CollResult<C, I, F> {
+    Ok((C, Rest<I>)),
+    Fatal(F),
+}
+
+struct Collector<T, I, F, P: Fn(&I) -> Result<T, I, F>> {
+    repeater: Repeater<T, I, F, P>,
+    fatal_error: Option<F>,
+}
+
+impl<T, I: Input, F, P: Fn(&I) -> Result<T, I, F>> Iterator for Collector<T, I, F, P> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.repeater.next() {
+            IterResult::End => None,
+            IterResult::Fatal(err) => {
+                self.fatal_error = Some(err);
+                None
+            }
+            IterResult::Ok(result) => Some(result),
+        }
+    }
+}
+
+impl<T, I: Input, F, P: Fn(&I) -> Result<T, I, F>> Repeater<T, I, F, P> {
+    pub fn next(&mut self) -> IterResult<T, F> {
+        match (self.parser)(&self.rest) {
+            Ok((result, Rest(rest))) => {
+                self.rest = rest;
+                IterResult::Ok(result)
+            },
+            Err => IterResult::End,
+            Fatal(err) => IterResult::Fatal(err),
+        }
+    }
+
+    pub fn collect<C: FromIterator<T>>(self) -> CollResult<C, I, F> {
+        let mut collector = Collector { fatal_error: None, repeater: self };
+        let collection = C::from_iter(&mut collector);
+        match collector.fatal_error {
+            None => CollResult::Ok((collection, Rest(collector.repeater.rest))),
+            Some(err) => CollResult::Fatal(err),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +214,25 @@ mod tests {
         assert_eq!(one_matching_part::<_, ()>("_?!", |c| c.is_numeric()), Err);
 
         assert_eq!(one_matching_part::<_, ()>("", |_c| true), Err);
+    }
+
+    #[test]
+    fn test_collecting() {
+        let result: CollResult<Vec<char>, _, _> = Repeater::new("123abc", |input| one_matching_part::<_, ()>(input, |c| c.is_numeric())).collect();
+
+        assert_eq!(result, CollResult::Ok((vec!['1', '2', '3'], Rest("abc"))));
+
+        let result: CollResult<Vec<char>, _, _> = Repeater::new("abc", |input| one_matching_part::<_, ()>(input, |c| c.is_numeric())).collect();
+
+        assert_eq!(result, CollResult::Ok((vec![], Rest("abc"))));
+
+        let result: CollResult<Vec<char>, _, _> = Repeater::new("123", |input| one_matching_part::<_, ()>(input, |c| c.is_numeric())).collect();
+
+        assert_eq!(result, CollResult::Ok((vec!['1', '2', '3'], Rest(""))));
+
+        let result: CollResult<Vec<char>, _, _> = Repeater::new("", |_input| Fatal(())).collect();
+
+        assert_eq!(result, CollResult::Fatal(()));
     }
 
     #[test]
