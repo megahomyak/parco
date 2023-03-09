@@ -134,6 +134,33 @@ pub enum CollResult<C, I, F> {
     Fatal(F),
 }
 
+impl<C, I, F> From<CollResult<C, I, F>> for Result<C, I, F> {
+    fn from(value: CollResult<C, I, F>) -> Self {
+        match value {
+            CollResult::Ok((container, rest)) => Ok((container, rest)),
+            CollResult::Fatal(err) => Fatal(err),
+        }
+    }
+}
+
+impl<T, I, F> From<std::result::Result<(T, Rest<I>), F>> for Result<T, I, F> {
+    fn from(value: std::result::Result<(T, Rest<I>), F>) -> Self {
+        match value {
+            std::result::Result::Ok((value, rest)) => Ok((value, rest)),
+            std::result::Result::Err(err) => Fatal(err),
+        }
+    }
+}
+
+impl<C, I, F> From<CollResult<C, I, F>> for std::result::Result<(C, Rest<I>), F> {
+    fn from(value: CollResult<C, I, F>) -> Self {
+        match value {
+            CollResult::Ok((container, rest)) => std::result::Result::Ok((container, rest)),
+            CollResult::Fatal(err) => std::result::Result::Err(err),
+        }
+    }
+}
+
 pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: FromIterator<T>>(
     input: I,
     parser: P,
