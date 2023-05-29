@@ -122,17 +122,17 @@ pub fn one_part<I: Input, F>(input: I) -> Result<I::Part, I, F> {
 }
 
 pub struct PartsIter<I> {
-    input: I,
+    pub rest: I,
 }
 
 impl<I: Input> Iterator for PartsIter<I> {
     type Item = I::Part;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.input.take_one_part() {
+        match self.rest.take_one_part() {
             None => None,
             Some((part, Rest(rest))) => {
-                self.input = rest;
+                self.rest = rest;
                 Some(part)
             }
         }
@@ -140,7 +140,7 @@ impl<I: Input> Iterator for PartsIter<I> {
 }
 
 pub fn parts<I: Input>(input: I) -> PartsIter<I> {
-    PartsIter { input }
+    PartsIter { rest: input }
 }
 
 pub fn one_matching_part<I: Input, F>(
