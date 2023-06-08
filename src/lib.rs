@@ -80,7 +80,7 @@ impl<'s> Input for PositionedString<'s> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Result<T, I, F> {
     /// Parsing completed successfully
-    Ok((T, Rest<I>)),
+    Ok(T, Rest<I>),
     /// Recoverable error meaning "input cannot be parsed with the current parser"
     Err,
     /// Unrecoverable error meaning "input cannot be parsed with any parser"
@@ -90,9 +90,9 @@ pub enum Result<T, I, F> {
 use crate::Result::{Err, Fatal, Ok};
 
 impl<T, I, F> Result<T, I, F> {
-    pub fn and<O>(self, f: impl FnOnce((T, Rest<I>)) -> Result<O, I, F>) -> Result<O, I, F> {
+    pub fn and<O>(self, f: impl FnOnce(T, Rest<I>) -> Result<O, I, F>) -> Result<O, I, F> {
         match self {
-            Self::Ok(success) => f(success),
+            Self::Ok(result, rest) => f(result, rest),
             Self::Err => Err,
             Self::Fatal(e) => Fatal(e),
         }
@@ -108,7 +108,7 @@ impl<T, I, F> Result<T, I, F> {
 
     pub fn map<O>(self, f: impl FnOnce(T) -> O) -> Result<O, I, F> {
         match self {
-            Self::Ok((value, rest)) => Ok((f(value), rest)),
+            Self::Ok(result, rest) => Ok(f(result), rest),
             Self::Err => Err,
             Self::Fatal(e) => Fatal(e),
         }
@@ -118,7 +118,7 @@ impl<T, I, F> Result<T, I, F> {
 pub fn one_part<I: Input, F>(input: I) -> Result<I::Part, I, F> {
     input
         .take_one_part()
-        .map_or(Err, |(part, rest)| Ok((part, rest)))
+        .map_or(Err, |(part, rest)| Ok(part, rest))
 }
 
 pub struct PartsIter<I> {
@@ -147,19 +147,19 @@ pub fn one_matching_part<I: Input, F>(
     input: I,
     f: impl FnOnce(&I::Part) -> bool,
 ) -> Result<I::Part, I, F> {
-    one_part(input).and(|(part, rest)| if f(&part) { Ok((part, rest)) } else { Err })
+    one_part(input).and(|part, rest| if f(&part) { Ok(part, rest) } else { Err })
 }
 
 #[derive(Debug, PartialEq)]
 pub enum CollResult<C, I, F> {
-    Ok((C, Rest<I>)),
+    Ok(C, Rest<I>),
     Fatal(F),
 }
 
 impl<C, I, F> From<CollResult<C, I, F>> for Result<C, I, F> {
     fn from(value: CollResult<C, I, F>) -> Self {
         match value {
-            CollResult::Ok((container, rest)) => Ok((container, rest)),
+            CollResult::Ok(container, rest) => Ok(container, rest),
             CollResult::Fatal(err) => Fatal(err),
         }
     }
@@ -168,7 +168,7 @@ impl<C, I, F> From<CollResult<C, I, F>> for Result<C, I, F> {
 impl<T, I, F> From<std::result::Result<(T, Rest<I>), F>> for Result<T, I, F> {
     fn from(value: std::result::Result<(T, Rest<I>), F>) -> Self {
         match value {
-            std::result::Result::Ok((value, rest)) => Ok((value, rest)),
+            std::result::Result::Ok((value, rest)) => Ok(value, rest),
             std::result::Result::Err(err) => Fatal(err),
         }
     }
@@ -177,7 +177,7 @@ impl<T, I, F> From<std::result::Result<(T, Rest<I>), F>> for Result<T, I, F> {
 impl<C, I, F> From<CollResult<C, I, F>> for std::result::Result<(C, Rest<I>), F> {
     fn from(value: CollResult<C, I, F>) -> Self {
         match value {
-            CollResult::Ok((container, rest)) => std::result::Result::Ok((container, rest)),
+            CollResult::Ok(container, rest) => std::result::Result::Ok((container, rest)),
             CollResult::Fatal(err) => std::result::Result::Err(err),
         }
     }
@@ -203,7 +203,7 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: FromIterator<
                     self.fatal_error = Some(err);
                     None
                 }
-                Ok((result, Rest(rest))) => {
+                Ok(result, Rest(rest)) => {
                     self.rest = rest;
                     Some(result)
                 }
@@ -218,7 +218,7 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: FromIterator<
     };
     let collection = C::from_iter(&mut collector);
     match collector.fatal_error {
-        None => CollResult::Ok((collection, Rest(collector.rest))),
+        None => CollResult::Ok(collection, Rest(collector.rest)),
         Some(err) => CollResult::Fatal(err),
     }
 }
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_taking_one_part() {
-        assert_eq!(one_part::<_, ()>("abc"), Ok(('a', Rest("bc"))));
+        assert_eq!(one_part::<_, ()>("abc"), Ok('a', Rest("bc")));
 
         assert_eq!(one_part::<_, ()>(""), Err);
     }
@@ -238,7 +238,7 @@ mod tests {
     fn test_taking_one_matching_part() {
         assert_eq!(
             one_matching_part::<_, ()>("123", |c| c.is_numeric()),
-            Ok(('1', Rest("23")))
+            Ok('1', Rest("23"))
         );
 
         assert_eq!(one_matching_part::<_, ()>("_?!", |c| c.is_numeric()), Err);
@@ -252,19 +252,19 @@ mod tests {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, CollResult::Ok((vec!['1', '2', '3'], Rest("abc"))));
+        assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], Rest("abc")));
 
         let result: CollResult<Vec<char>, _, _> = collect_repeating("abc", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, CollResult::Ok((vec![], Rest("abc"))));
+        assert_eq!(result, CollResult::Ok(vec![], Rest("abc")));
 
         let result: CollResult<Vec<char>, _, _> = collect_repeating("123", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, CollResult::Ok((vec!['1', '2', '3'], Rest(""))));
+        assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], Rest("")));
 
         let result: CollResult<Vec<char>, _, _> = collect_repeating("", |_input| Fatal(()));
 
@@ -276,29 +276,29 @@ mod tests {
         let input = "12345";
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == '1').and(|(c1, input)| one_matching_part(
+            one_matching_part::<_, ()>(input, |c| *c == '1').and(|c1, input| one_matching_part(
                 input.0,
                 |c| *c == '2'
             )
             .map(|c2| [c1, c2].iter().collect::<String>())),
-            Ok((String::from("12"), Rest("345")))
+            Ok(String::from("12"), Rest("345"))
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .and(|(_c, input)| one_matching_part(input.0, |c| *c == '1')),
+                .and(|_c, input| one_matching_part(input.0, |c| *c == '1')),
             Err,
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1')
-                .and(|(_c, input)| one_matching_part(input.0, |c| *c == 'b')),
+                .and(|_c, input| one_matching_part(input.0, |c| *c == 'b')),
             Err,
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .and(|(_c, input)| one_matching_part(input.0, |c| *c == 'b')),
+                .and(|_c, input| one_matching_part(input.0, |c| *c == 'b')),
             Err,
         );
     }
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == 'a')
                 .or(|| one_matching_part(input, |c| *c == '1')),
-            Ok(('1', Rest("2345")))
+            Ok('1', Rest("2345"))
         );
 
         assert_eq!(
@@ -322,14 +322,14 @@ mod tests {
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1')
                 .or(|| one_matching_part(input, |c| *c == 'b')),
-            Ok(('1', Rest("2345")))
+            Ok('1', Rest("2345"))
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1')
                 .map(|_c| 'a')
                 .or(|| one_matching_part(input, |c| *c == '1')),
-            Ok(('a', Rest("2345")))
+            Ok('a', Rest("2345"))
         );
     }
 
@@ -337,7 +337,7 @@ mod tests {
     fn test_output_mapping() {
         assert_eq!(
             one_part::<_, ()>("1").map(|_c| String::from("Hello!")),
-            Ok((String::from("Hello!"), Rest("")))
+            Ok(String::from("Hello!"), Rest(""))
         );
 
         assert_eq!(one_part::<_, ()>("").map(|_c| String::from("Hello!")), Err);
@@ -352,24 +352,24 @@ mod tests {
 
         assert_eq!(
             one_part::<_, ()>(PositionedString::from("1")),
-            Ok((
+            Ok(
                 '1',
                 Rest(PositionedString {
                     pos: Position { row: 1, col: 2 },
                     src: ""
                 })
-            ))
+            )
         );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::from("a\n")).and(|(_c, rest)| one_part(rest.0)),
-            Ok((
+            one_part::<_, ()>(PositionedString::from("a\n")).and(|_c, rest| one_part(rest.0)),
+            Ok(
                 '\n',
                 Rest(PositionedString {
                     pos: Position { row: 2, col: 1 },
                     src: ""
                 })
-            ))
+            )
         );
     }
 
