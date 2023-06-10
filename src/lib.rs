@@ -150,21 +150,6 @@ pub fn one_matching_part<I: Input, F>(
     one_part(input).and(|part, rest| if f(&part) { Ok(part, rest) } else { Err })
 }
 
-#[derive(Debug, PartialEq)]
-pub enum CollResult<C, I, F> {
-    Ok(C, Rest<I>),
-    Fatal(F),
-}
-
-impl<C, I, F> From<CollResult<C, I, F>> for Result<C, I, F> {
-    fn from(value: CollResult<C, I, F>) -> Self {
-        match value {
-            CollResult::Ok(container, rest) => Ok(container, rest),
-            CollResult::Fatal(err) => Fatal(err),
-        }
-    }
-}
-
 impl<T, I, F> From<std::result::Result<(T, Rest<I>), F>> for Result<T, I, F> {
     fn from(value: std::result::Result<(T, Rest<I>), F>) -> Self {
         match value {
@@ -174,19 +159,11 @@ impl<T, I, F> From<std::result::Result<(T, Rest<I>), F>> for Result<T, I, F> {
     }
 }
 
-impl<C, I, F> From<CollResult<C, I, F>> for std::result::Result<(C, Rest<I>), F> {
-    fn from(value: CollResult<C, I, F>) -> Self {
-        match value {
-            CollResult::Ok(container, rest) => std::result::Result::Ok((container, rest)),
-            CollResult::Fatal(err) => std::result::Result::Err(err),
-        }
-    }
-}
-
-pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: FromIterator<T>>(
+pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
+    mut collection: C,
     input: I,
     parser: P,
-) -> CollResult<C, I, F> {
+) -> Result<C, I, F> {
     struct Collector<P, I, F> {
         parser: P,
         rest: I,
@@ -216,10 +193,10 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: FromIterator<
         rest: input,
         parser,
     };
-    let collection = C::from_iter(&mut collector);
+    collection.extend(&mut collector);
     match collector.fatal_error {
-        None => CollResult::Ok(collection, Rest(collector.rest)),
-        Some(err) => CollResult::Fatal(err),
+        None => Ok(collection, Rest(collector.rest)),
+        Some(err) => Fatal(err),
     }
 }
 
@@ -248,27 +225,27 @@ mod tests {
 
     #[test]
     fn test_collecting() {
-        let result: CollResult<Vec<char>, _, _> = collect_repeating("123abc", |input| {
+        let result = collect_repeating(Vec::new(), "123abc", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], Rest("abc")));
+        assert_eq!(result, Ok(vec!['1', '2', '3'], Rest("abc")));
 
-        let result: CollResult<Vec<char>, _, _> = collect_repeating("abc", |input| {
+        let result = collect_repeating(Vec::new(), "abc", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, CollResult::Ok(vec![], Rest("abc")));
+        assert_eq!(result, Ok(vec![], Rest("abc")));
 
-        let result: CollResult<Vec<char>, _, _> = collect_repeating("123", |input| {
+        let result = collect_repeating(Vec::new(), "123", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], Rest("")));
+        assert_eq!(result, Ok(vec!['1', '2', '3'], Rest("")));
 
-        let result: CollResult<Vec<char>, _, _> = collect_repeating("", |_input| Fatal(()));
+        let result = collect_repeating::<(), _, _, _, _>(Vec::new(), "", |_input| Fatal(()));
 
-        assert_eq!(result, CollResult::Fatal(()));
+        assert_eq!(result, Fatal(()));
     }
 
     #[test]
