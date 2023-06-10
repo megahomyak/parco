@@ -5,7 +5,7 @@ pub enum Result<T, R, E> {
 
 pub use crate::Result::{Err, Ok};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputEnded {}
 
 pub trait Input: Sized {
@@ -14,13 +14,13 @@ pub trait Input: Sized {
     fn take_one_part(&self) -> Result<Self::Part, Self, InputEnded>;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionedString<'a> {
     pub position: Position,
     pub content: &'a str,
