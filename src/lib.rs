@@ -108,28 +108,6 @@ pub fn one_part<I: Input, F>(input: I) -> Result<I::Part, I, F> {
         .map_or(Err, |(part, rest)| Ok(part, rest))
 }
 
-pub struct PartsIter<I> {
-    pub rest: I,
-}
-
-impl<I: Input> Iterator for PartsIter<I> {
-    type Item = I::Part;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.rest.take_one_part() {
-            None => None,
-            Some((part, rest)) => {
-                self.rest = rest;
-                Some(part)
-            }
-        }
-    }
-}
-
-pub fn parts<I: Input>(input: I) -> PartsIter<I> {
-    PartsIter { rest: input }
-}
-
 pub fn one_matching_part<I: Input, F>(
     input: I,
     f: impl FnOnce(&I::Part) -> bool,
