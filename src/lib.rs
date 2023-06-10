@@ -1,10 +1,7 @@
-#[derive(Debug, PartialEq, Eq)]
-pub struct Rest<T>(pub T);
-
 pub trait Input {
     type Part;
 
-    fn take_one_part(&self) -> Option<(Self::Part, Rest<Self>)>
+    fn take_one_part(&self) -> Option<(Self::Part, Self)>
     where
         Self: Sized;
 }
@@ -12,9 +9,9 @@ pub trait Input {
 impl Input for &str {
     type Part = char;
 
-    fn take_one_part(&self) -> Option<(Self::Part, Rest<Self>)> {
+    fn take_one_part(&self) -> Option<(Self::Part, Self)> {
         let mut chars = self.chars();
-        chars.next().map(|c| (c, Rest(chars.as_str())))
+        chars.next().map(|c| (c, chars.as_str()))
     }
 }
 
@@ -43,12 +40,12 @@ impl<'s> From<&'s str> for PositionedString<'s> {
 impl<'s> Input for PositionedString<'s> {
     type Part = char;
 
-    fn take_one_part(&self) -> Option<(Self::Part, Rest<Self>)> {
+    fn take_one_part(&self) -> Option<(Self::Part, Self)> {
         let mut chars = self.src.chars();
         chars.next().map(|c| {
             (
                 c,
-                Rest(Self {
+                Self {
                     src: chars.as_str(),
                     pos: if c == '\n' {
                         Position {
@@ -61,7 +58,7 @@ impl<'s> Input for PositionedString<'s> {
                             col: self.pos.col + 1,
                         }
                     },
-                }),
+                },
             )
         })
     }
@@ -70,7 +67,7 @@ impl<'s> Input for PositionedString<'s> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Result<T, I, F> {
     /// Parsing completed successfully
-    Ok(T, Rest<I>),
+    Ok(T, I),
     /// Recoverable error meaning "input cannot be parsed with the current parser"
     Err,
     /// Unrecoverable error meaning "input cannot be parsed with any parser"
@@ -80,7 +77,7 @@ pub enum Result<T, I, F> {
 use crate::Result::{Err, Fatal, Ok};
 
 impl<T, I, F> Result<T, I, F> {
-    pub fn and<OT, OI>(self, f: impl FnOnce(T, Rest<I>) -> Result<OT, OI, F>) -> Result<OT, OI, F> {
+    pub fn and<OT, OI>(self, f: impl FnOnce(T, I) -> Result<OT, OI, F>) -> Result<OT, OI, F> {
         match self {
             Ok(result, rest) => f(result, rest),
             Err => Err,
@@ -121,7 +118,7 @@ impl<I: Input> Iterator for PartsIter<I> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.rest.take_one_part() {
             None => None,
-            Some((part, Rest(rest))) => {
+            Some((part, rest)) => {
                 self.rest = rest;
                 Some(part)
             }
@@ -140,8 +137,8 @@ pub fn one_matching_part<I: Input, F>(
     one_part(input).and(|part, rest| if f(&part) { Ok(part, rest) } else { Err })
 }
 
-impl<T, I, F> From<std::result::Result<(T, Rest<I>), F>> for Result<T, I, F> {
-    fn from(value: std::result::Result<(T, Rest<I>), F>) -> Self {
+impl<T, I, F> From<std::result::Result<(T, I), F>> for Result<T, I, F> {
+    fn from(value: std::result::Result<(T, I), F>) -> Self {
         match value {
             std::result::Result::Ok((value, rest)) => Ok(value, rest),
             std::result::Result::Err(err) => Fatal(err),
@@ -170,7 +167,7 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
                     self.fatal_error = Some(err);
                     None
                 }
-                Ok(result, Rest(rest)) => {
+                Ok(result, rest) => {
                     self.rest = rest;
                     Some(result)
                 }
@@ -185,7 +182,7 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
     };
     collection.extend(&mut collector);
     match collector.fatal_error {
-        None => Ok(collection, Rest(collector.rest)),
+        None => Ok(collection, collector.rest),
         Some(err) => Fatal(err),
     }
 }
@@ -196,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_taking_one_part() {
-        assert_eq!(one_part::<_, ()>("abc"), Ok('a', Rest("bc")));
+        assert_eq!(one_part::<_, ()>("abc"), Ok('a', "bc"));
 
         assert_eq!(one_part::<_, ()>(""), Err);
     }
@@ -205,7 +202,7 @@ mod tests {
     fn test_taking_one_matching_part() {
         assert_eq!(
             one_matching_part::<_, ()>("123", |c| c.is_numeric()),
-            Ok('1', Rest("23"))
+            Ok('1', "23")
         );
 
         assert_eq!(one_matching_part::<_, ()>("_?!", |c| c.is_numeric()), Err);
@@ -219,19 +216,19 @@ mod tests {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, Ok(vec!['1', '2', '3'], Rest("abc")));
+        assert_eq!(result, Ok(vec!['1', '2', '3'], "abc"));
 
         let result = collect_repeating(Vec::new(), "abc", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, Ok(vec![], Rest("abc")));
+        assert_eq!(result, Ok(vec![], "abc"));
 
         let result = collect_repeating(Vec::new(), "123", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, Ok(vec!['1', '2', '3'], Rest("")));
+        assert_eq!(result, Ok(vec!['1', '2', '3'], ""));
 
         let result = collect_repeating::<(), _, _, _, _>(Vec::new(), "", |_input| Fatal(()));
 
@@ -244,28 +241,28 @@ mod tests {
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1').and(|c1, input| one_matching_part(
-                input.0,
+                input,
                 |c| *c == '2'
             )
             .map(|c2| [c1, c2].iter().collect::<String>())),
-            Ok(String::from("12"), Rest("345"))
+            Ok(String::from("12"), "345")
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .and(|_c, input| one_matching_part(input.0, |c| *c == '1')),
+                .and(|_c, input| one_matching_part(input, |c| *c == '1')),
             Err,
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1')
-                .and(|_c, input| one_matching_part(input.0, |c| *c == 'b')),
+                .and(|_c, input| one_matching_part(input, |c| *c == 'b')),
             Err,
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .and(|_c, input| one_matching_part(input.0, |c| *c == 'b')),
+                .and(|_c, input| one_matching_part(input, |c| *c == 'b')),
             Err,
         );
     }
@@ -277,7 +274,7 @@ mod tests {
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == 'a')
                 .or(|| one_matching_part(input, |c| *c == '1')),
-            Ok('1', Rest("2345"))
+            Ok('1', "2345")
         );
 
         assert_eq!(
@@ -289,14 +286,14 @@ mod tests {
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1')
                 .or(|| one_matching_part(input, |c| *c == 'b')),
-            Ok('1', Rest("2345"))
+            Ok('1', "2345")
         );
 
         assert_eq!(
             one_matching_part::<_, ()>(input, |c| *c == '1')
                 .map(|_c| 'a')
                 .or(|| one_matching_part(input, |c| *c == '1')),
-            Ok('a', Rest("2345"))
+            Ok('a', "2345")
         );
     }
 
@@ -304,7 +301,7 @@ mod tests {
     fn test_output_mapping() {
         assert_eq!(
             one_part::<_, ()>("1").map(|_c| String::from("Hello!")),
-            Ok(String::from("Hello!"), Rest(""))
+            Ok(String::from("Hello!"), "")
         );
 
         assert_eq!(one_part::<_, ()>("").map(|_c| String::from("Hello!")), Err);
@@ -312,30 +309,27 @@ mod tests {
 
     #[test]
     fn test_position_tracking() {
-        assert_eq!(
-            PositionedString::from("").pos,
-            Position { row: 1, col: 1 }
-        );
+        assert_eq!(PositionedString::from("").pos, Position { row: 1, col: 1 });
 
         assert_eq!(
             one_part::<_, ()>(PositionedString::from("1")),
             Ok(
                 '1',
-                Rest(PositionedString {
+                PositionedString {
                     pos: Position { row: 1, col: 2 },
                     src: ""
-                })
+                }
             )
         );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::from("a\n")).and(|_c, rest| one_part(rest.0)),
+            one_part::<_, ()>(PositionedString::from("a\n")).and(|_c, rest| one_part(rest)),
             Ok(
                 '\n',
-                Rest(PositionedString {
+                PositionedString {
                     pos: Position { row: 2, col: 1 },
                     src: ""
-                })
+                }
             )
         );
     }
