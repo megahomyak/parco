@@ -27,18 +27,8 @@ pub struct Position {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionedString<'s> {
-    src: &'s str,
-    pos: Position,
-}
-
-impl<'s> PositionedString<'s> {
-    pub fn src(&self) -> &'s str {
-        self.src
-    }
-
-    pub fn pos(&self) -> Position {
-        self.pos
-    }
+    pub src: &'s str,
+    pub pos: Position,
 }
 
 impl<'s> From<&'s str> for PositionedString<'s> {
@@ -90,27 +80,27 @@ pub enum Result<T, I, F> {
 use crate::Result::{Err, Fatal, Ok};
 
 impl<T, I, F> Result<T, I, F> {
-    pub fn and<O>(self, f: impl FnOnce(T, Rest<I>) -> Result<O, I, F>) -> Result<O, I, F> {
+    pub fn and<OT, OI>(self, f: impl FnOnce(T, Rest<I>) -> Result<OT, OI, F>) -> Result<OT, OI, F> {
         match self {
-            Self::Ok(result, rest) => f(result, rest),
-            Self::Err => Err,
-            Self::Fatal(e) => Fatal(e),
+            Ok(result, rest) => f(result, rest),
+            Err => Err,
+            Fatal(e) => Fatal(e),
         }
     }
 
     pub fn or(self, f: impl FnOnce() -> Self) -> Self {
-        if let Self::Err = self {
-            f()
-        } else {
-            self
+        match self {
+            Ok(result, rest) => Ok(result, rest),
+            Err => f(),
+            Fatal(e) => Fatal(e),
         }
     }
 
     pub fn map<O>(self, f: impl FnOnce(T) -> O) -> Result<O, I, F> {
         match self {
-            Self::Ok(result, rest) => Ok(f(result), rest),
-            Self::Err => Err,
-            Self::Fatal(e) => Fatal(e),
+            Ok(result, rest) => Ok(f(result), rest),
+            Err => Err,
+            Fatal(e) => Fatal(e),
         }
     }
 }
@@ -323,7 +313,7 @@ mod tests {
     #[test]
     fn test_position_tracking() {
         assert_eq!(
-            PositionedString::from("").pos(),
+            PositionedString::from("").pos,
             Position { row: 1, col: 1 }
         );
 
