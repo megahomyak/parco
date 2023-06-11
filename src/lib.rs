@@ -115,15 +115,6 @@ pub fn one_matching_part<I: Input, F>(
     one_part(input).and(|part, rest| if f(&part) { Ok(part, rest) } else { Err })
 }
 
-impl<T, I, F> From<std::result::Result<(T, I), F>> for Result<T, I, F> {
-    fn from(value: std::result::Result<(T, I), F>) -> Self {
-        match value {
-            std::result::Result::Ok((value, rest)) => Ok(value, rest),
-            std::result::Result::Err(err) => Fatal(err),
-        }
-    }
-}
-
 pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
     mut collection: C,
     input: I,
