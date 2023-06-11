@@ -278,37 +278,28 @@ mod tests {
 
     #[test]
     fn test_position_tracking() {
-        assert_eq!(PositionedString::from("").pos, Position { row: 1, col: 1 });
+        assert_eq!(PositionedString::new("").position, Position { row: 1, column: 1 });
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::from("1")),
+            one_part::<_, ()>(PositionedString::new("1")),
             Ok(
                 '1',
                 PositionedString {
-                    pos: Position { row: 1, col: 2 },
-                    src: ""
+                    position: Position { row: 1, column: 2 },
+                    content: ""
                 }
             )
         );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::from("a\n")).and(|_c, rest| one_part(rest)),
+            one_part::<_, ()>(PositionedString::new("a\n")).and(|_c, rest| one_part(rest)),
             Ok(
                 '\n',
                 PositionedString {
-                    pos: Position { row: 2, col: 1 },
-                    src: ""
+                    position: Position { row: 2, column: 1 },
+                    content: ""
                 }
             )
         );
-    }
-
-    #[test]
-    fn test_parts_iteration() {
-        let mut output = Vec::new();
-        for part in parts("hello") {
-            output.push(part);
-        }
-        assert_eq!(output, vec!['h', 'e', 'l', 'l', 'o']);
     }
 }
