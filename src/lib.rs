@@ -19,20 +19,20 @@ impl Input for &str {
 pub struct Position {
     pub row: usize,
     /// Column
-    pub col: usize,
+    pub column: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PositionedString<'s> {
-    pub src: &'s str,
-    pub pos: Position,
+    pub content: &'s str,
+    pub position: Position,
 }
 
-impl<'s> From<&'s str> for PositionedString<'s> {
-    fn from(src: &'s str) -> Self {
+impl<'a> PositionedString<'a> {
+    pub fn new(content: &'a str) -> Self {
         Self {
-            src,
-            pos: Position { row: 1, col: 1 },
+            content,
+            position: Position { row: 1, column: 1 },
         }
     }
 }
@@ -41,21 +41,21 @@ impl<'s> Input for PositionedString<'s> {
     type Part = char;
 
     fn take_one_part(&self) -> Option<(Self::Part, Self)> {
-        let mut chars = self.src.chars();
+        let mut chars = self.content.chars();
         chars.next().map(|c| {
             (
                 c,
                 Self {
-                    src: chars.as_str(),
-                    pos: if c == '\n' {
+                    content: chars.as_str(),
+                    position: if c == '\n' {
                         Position {
-                            row: self.pos.row + 1,
-                            col: 1,
+                            row: self.position.row + 1,
+                            column: 1,
                         }
                     } else {
                         Position {
-                            row: self.pos.row,
-                            col: self.pos.col + 1,
+                            row: self.position.row,
+                            column: self.position.column + 1,
                         }
                     },
                 },
