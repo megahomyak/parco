@@ -28,8 +28,8 @@ pub struct PositionedString<'s> {
     pub position: Position,
 }
 
-impl<'a> PositionedString<'a> {
-    pub fn new(content: &'a str) -> Self {
+impl<'a> From<&'a str> for PositionedString<'a> {
+    fn from(content: &'a str) -> Self {
         Self {
             content,
             position: Position { row: 1, column: 1 },
@@ -278,10 +278,13 @@ mod tests {
 
     #[test]
     fn test_position_tracking() {
-        assert_eq!(PositionedString::new("").position, Position { row: 1, column: 1 });
+        assert_eq!(
+            PositionedString::from("").position,
+            Position { row: 1, column: 1 }
+        );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::new("1")),
+            one_part::<_, ()>(PositionedString::from("1")),
             Ok(
                 '1',
                 PositionedString {
@@ -292,7 +295,7 @@ mod tests {
         );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::new("a\n")).and(|_c, rest| one_part(rest)),
+            one_part::<_, ()>(PositionedString::from("a\n")).and(|_c, rest| one_part(rest)),
             Ok(
                 '\n',
                 PositionedString {
