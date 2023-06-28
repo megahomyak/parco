@@ -115,11 +115,26 @@ pub fn one_matching_part<I: Input, F>(
     one_part(input).and(|part, rest| if f(&part) { Ok(part, rest) } else { Err })
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CollResult<T, I, F> {
+    Ok(T, I),
+    Fatal(F),
+}
+
+impl<T, I, F> CollResult<T, I, F> {
+    pub fn norm(self) -> Result<T, I, F> {
+        match self {
+            Self::Ok(output, rest) => Ok(output, rest),
+            Self::Fatal(err) => Fatal(err),
+        }
+    }
+}
+
 pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
     mut collection: C,
     input: I,
     parser: P,
-) -> Result<C, I, F> {
+) -> CollResult<C, I, F> {
     struct Collector<P, I, F> {
         parser: P,
         rest: I,
@@ -151,8 +166,8 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
     };
     collection.extend(&mut collector);
     match collector.fatal_error {
-        None => Ok(collection, collector.rest),
-        Some(err) => Fatal(err),
+        None => CollResult::Ok(collection, collector.rest),
+        Some(err) => CollResult::Fatal(err),
     }
 }
 
@@ -185,23 +200,23 @@ mod tests {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, Ok(vec!['1', '2', '3'], "abc"));
+        assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], "abc"));
 
         let result = collect_repeating(Vec::new(), "abc", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, Ok(vec![], "abc"));
+        assert_eq!(result, CollResult::Ok(vec![], "abc"));
 
         let result = collect_repeating(Vec::new(), "123", |input| {
             one_matching_part::<_, ()>(input, |c| c.is_numeric())
         });
 
-        assert_eq!(result, Ok(vec!['1', '2', '3'], ""));
+        assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], ""));
 
         let result = collect_repeating::<(), _, _, _, _>(Vec::new(), "", |_input| Fatal(()));
 
-        assert_eq!(result, Fatal(()));
+        assert_eq!(result, CollResult::Fatal(()));
     }
 
     #[test]
