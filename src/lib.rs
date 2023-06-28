@@ -102,17 +102,43 @@ impl<T, I, F> Result<T, I, F> {
     }
 }
 
-pub fn one_part<I: Input, F>(input: I) -> Result<I::Part, I, F> {
-    input
-        .take_one_part()
-        .map_or(Err, |(part, rest)| Ok(part, rest))
+#[derive(Debug, PartialEq, Eq)]
+pub enum TakingResult<T, I> {
+    Ok(T, I),
+    Err,
 }
 
-pub fn one_matching_part<I: Input, F>(
+impl<T, I> TakingResult<T, I> {
+    pub fn norm<F>(self) -> Result<T, I, F> {
+        match self {
+            Self::Ok(output, rest) => Ok(output, rest),
+            Self::Err => Err,
+        }
+    }
+}
+
+pub fn one_part<I: Input>(input: I) -> TakingResult<I::Part, I> {
+    input
+        .take_one_part()
+        .map_or(TakingResult::Err, |(part, rest)| {
+            TakingResult::Ok(part, rest)
+        })
+}
+
+pub fn one_matching_part<I: Input>(
     input: I,
     f: impl FnOnce(&I::Part) -> bool,
-) -> Result<I::Part, I, F> {
-    one_part(input).and(|part, rest| if f(&part) { Ok(part, rest) } else { Err })
+) -> TakingResult<I::Part, I> {
+    match one_part(input) {
+        TakingResult::Ok(part, rest) => {
+            if f(&part) {
+                TakingResult::Ok(part, rest)
+            } else {
+                TakingResult::Err
+            }
+        }
+        err => err,
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -177,39 +203,42 @@ mod tests {
 
     #[test]
     fn test_taking_one_part() {
-        assert_eq!(one_part::<_, ()>("abc"), Ok('a', "bc"));
+        assert_eq!(one_part("abc"), TakingResult::Ok('a', "bc"));
 
-        assert_eq!(one_part::<_, ()>(""), Err);
+        assert_eq!(one_part(""), TakingResult::Err);
     }
 
     #[test]
     fn test_taking_one_matching_part() {
         assert_eq!(
-            one_matching_part::<_, ()>("123", |c| c.is_numeric()),
-            Ok('1', "23")
+            one_matching_part("123", |c| c.is_numeric()),
+            TakingResult::Ok('1', "23")
         );
 
-        assert_eq!(one_matching_part::<_, ()>("_?!", |c| c.is_numeric()), Err);
+        assert_eq!(
+            one_matching_part("_?!", |c| c.is_numeric()),
+            TakingResult::Err
+        );
 
-        assert_eq!(one_matching_part::<_, ()>("", |_c| true), Err);
+        assert_eq!(one_matching_part("", |_c| true), TakingResult::Err);
     }
 
     #[test]
     fn test_collecting() {
         let result = collect_repeating(Vec::new(), "123abc", |input| {
-            one_matching_part::<_, ()>(input, |c| c.is_numeric())
+            one_matching_part(*input, |c| c.is_numeric()).norm()
         });
 
         assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], "abc"));
 
         let result = collect_repeating(Vec::new(), "abc", |input| {
-            one_matching_part::<_, ()>(input, |c| c.is_numeric())
+            one_matching_part(*input, |c| c.is_numeric()).norm()
         });
 
         assert_eq!(result, CollResult::Ok(vec![], "abc"));
 
         let result = collect_repeating(Vec::new(), "123", |input| {
-            one_matching_part::<_, ()>(input, |c| c.is_numeric())
+            one_matching_part(*input, |c| c.is_numeric()).norm()
         });
 
         assert_eq!(result, CollResult::Ok(vec!['1', '2', '3'], ""));
@@ -224,29 +253,32 @@ mod tests {
         let input = "12345";
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == '1').and(|c1, input| one_matching_part(
-                input,
-                |c| *c == '2'
-            )
-            .map(|c2| [c1, c2].iter().collect::<String>())),
+            one_matching_part(input, |c| *c == '1')
+                .norm()
+                .and(|c1, input| one_matching_part(input, |c| *c == '2')
+                    .norm()
+                    .map(|c2| [c1, c2].iter().collect::<String>())),
             Ok(String::from("12"), "345")
         );
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .and(|_c, input| one_matching_part(input, |c| *c == '1')),
+            one_matching_part(input, |c| *c == 'a')
+                .norm()
+                .and(|_c, input| one_matching_part(input, |c| *c == '1').norm()),
             Err,
         );
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == '1')
-                .and(|_c, input| one_matching_part(input, |c| *c == 'b')),
+            one_matching_part(input, |c| *c == '1')
+                .norm()
+                .and(|_c, input| one_matching_part(input, |c| *c == 'b').norm()),
             Err,
         );
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .and(|_c, input| one_matching_part(input, |c| *c == 'b')),
+            one_matching_part(input, |c| *c == 'a')
+                .norm()
+                .and(|_c, input| one_matching_part(input, |c| *c == 'b').norm()),
             Err,
         );
     }
@@ -256,27 +288,29 @@ mod tests {
         let input = "12345";
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .or(|| one_matching_part(input, |c| *c == '1')),
+            one_matching_part(input, |c| *c == 'a')
+                .norm()
+                .or(|| one_matching_part(input, |c| *c == '1').norm()),
             Ok('1', "2345")
         );
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == 'a')
-                .or(|| one_matching_part(input, |c| *c == 'b')),
+            one_matching_part(input, |c| *c == 'a')
+                .norm()
+                .or(|| one_matching_part(input, |c| *c == 'b').norm()),
             Err,
         );
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == '1')
-                .or(|| one_matching_part(input, |c| *c == 'b')),
+            one_matching_part(input, |c| *c == '1').norm()
+                .or(|| one_matching_part(input, |c| *c == 'b').norm()),
             Ok('1', "2345")
         );
 
         assert_eq!(
-            one_matching_part::<_, ()>(input, |c| *c == '1')
+            one_matching_part(input, |c| *c == '1').norm()
                 .map(|_c| 'a')
-                .or(|| one_matching_part(input, |c| *c == '1')),
+                .or(|| one_matching_part(input, |c| *c == '1').norm()),
             Ok('a', "2345")
         );
     }
@@ -284,11 +318,11 @@ mod tests {
     #[test]
     fn test_output_mapping() {
         assert_eq!(
-            one_part::<_, ()>("1").map(|_c| String::from("Hello!")),
+            one_part("1").norm().map(|_c| String::from("Hello!")),
             Ok(String::from("Hello!"), "")
         );
 
-        assert_eq!(one_part::<_, ()>("").map(|_c| String::from("Hello!")), Err);
+        assert_eq!(one_part("").norm().map(|_c| String::from("Hello!")), Err);
     }
 
     #[test]
@@ -299,7 +333,7 @@ mod tests {
         );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::from("1")),
+            one_part(PositionedString::from("1")).norm(),
             Ok(
                 '1',
                 PositionedString {
@@ -310,7 +344,7 @@ mod tests {
         );
 
         assert_eq!(
-            one_part::<_, ()>(PositionedString::from("a\n")).and(|_c, rest| one_part(rest)),
+            one_part(PositionedString::from("a\n")).norm().and(|_c, rest| one_part(rest).norm()),
             Ok(
                 '\n',
                 PositionedString {
