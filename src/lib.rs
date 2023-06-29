@@ -147,7 +147,7 @@ impl<T, I, F> CollResult<T, I, F> {
     }
 }
 
-pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
+pub fn collect_repeating<T, I, F, P: FnMut(&I) -> Result<T, I, F>, C: Extend<T>>(
     mut collection: C,
     input: I,
     parser: P,
@@ -158,7 +158,7 @@ pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
         fatal_error: Option<F>,
     }
 
-    impl<T, I, P: Fn(&I) -> Result<T, I, F>, F> Iterator for Collector<P, I, F> {
+    impl<T, I, P: FnMut(&I) -> Result<T, I, F>, F> Iterator for Collector<P, I, F> {
         type Item = T;
 
         fn next(&mut self) -> Option<Self::Item> {
