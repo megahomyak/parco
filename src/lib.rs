@@ -128,6 +128,20 @@ impl<T, I, F> CollResult<T, I, F> {
             Self::Fatal(err) => Fatal(err),
         }
     }
+
+    pub fn and<OT, OI>(self, f: impl FnOnce(T, I) -> Result<OT, OI, F>) -> Result<OT, OI, F> {
+        match self {
+            Self::Ok(result, rest) => f(result, rest),
+            Self::Fatal(e) => Fatal(e),
+        }
+    }
+
+    pub fn map<O>(self, f: impl FnOnce(T) -> O) -> Result<O, I, F> {
+        match self {
+            Self::Ok(result, rest) => Ok(f(result), rest),
+            Self::Fatal(e) => Fatal(e),
+        }
+    }
 }
 
 pub fn collect_repeating<T, I, F, P: Fn(&I) -> Result<T, I, F>, C: Extend<T>>(
