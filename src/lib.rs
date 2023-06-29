@@ -129,17 +129,20 @@ impl<T, I, F> CollResult<T, I, F> {
         }
     }
 
-    pub fn and<OT, OI>(self, f: impl FnOnce(T, I) -> Result<OT, OI, F>) -> Result<OT, OI, F> {
+    pub fn and<OT, OI>(
+        self,
+        f: impl FnOnce(T, I) -> CollResult<OT, OI, F>,
+    ) -> CollResult<OT, OI, F> {
         match self {
             Self::Ok(result, rest) => f(result, rest),
-            Self::Fatal(e) => Fatal(e),
+            Self::Fatal(e) => CollResult::Fatal(e),
         }
     }
 
-    pub fn map<O>(self, f: impl FnOnce(T) -> O) -> Result<O, I, F> {
+    pub fn map<O>(self, f: impl FnOnce(T) -> O) -> CollResult<O, I, F> {
         match self {
-            Self::Ok(result, rest) => Ok(f(result), rest),
-            Self::Fatal(e) => Fatal(e),
+            Self::Ok(result, rest) => CollResult::Ok(f(result), rest),
+            Self::Fatal(e) => CollResult::Fatal(e),
         }
     }
 }
