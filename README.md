@@ -10,7 +10,7 @@ A library for building parser combinators.
 
 ## Explanation
 
-* All sequences can be split to the first element and the rest if there is at least one element
+* All sequences can be split into the first element and the rest if there is at least one element
 * `Input::take_one_part()` is exactly the function to split sequences
 * Out of the box, only `&str` is supported. It splits into a `char` and the rest, `&str`
 * Implement `Input` for types you want to work with
