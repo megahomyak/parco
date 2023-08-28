@@ -20,6 +20,7 @@ A library for building parser combinators.
 
     ```
     Input::take_one_part("abc") -> Some(('a', "bc"))
+    Input::take_one_part("") -> None
     ```
 
 * Out of the box, only `&str` and `parco::PositionedString` are supported. You can split a `char` off of both of them
